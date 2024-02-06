@@ -139,18 +139,6 @@ class CPDataset(data.Dataset):
             cm[key] = torch.from_numpy(cm_array)  # [0,1]
             cm[key].unsqueeze_(0)
 
-        # person image
-        im_pil_big = Image.open(osp.join(self.data_path, im_name))
-        im_pil = transforms.Resize(self.fine_width, interpolation=2)(im_pil_big)
-        im = self.transform(im_pil)
-
-        # load parsing image
-        parse_name = im_name.replace('image', 'image-parse-v3').replace('.jpg', '.png')
-        im_parse_pil_big = Image.open(osp.join(self.data_path, parse_name))
-        im_parse_pil = transforms.Resize(self.fine_width, interpolation=0)(im_parse_pil_big)
-        parse = torch.from_numpy(np.array(im_parse_pil)[None]).long()
-        im_parse = self.transform(im_parse_pil.convert('RGB'))
-
         # parse map
         labels = {
             0: ['background', [0, 10]],
@@ -168,20 +156,8 @@ class CPDataset(data.Dataset):
             12: ['noise', [3, 11]]
         }
 
-        parse_map = torch.FloatTensor(20, self.fine_height, self.fine_width).zero_()
-        parse_map = parse_map.scatter_(0, parse, 1.0)
-        new_parse_map = torch.FloatTensor(self.semantic_nc, self.fine_height, self.fine_width).zero_()
-
-        for i in range(len(labels)):
-            for label in labels[i][1]:
-                new_parse_map[i] += parse_map[label]
-
-        parse_onehot = torch.FloatTensor(1, self.fine_height, self.fine_width).zero_()
-        for i in range(len(labels)):
-            for label in labels[i][1]:
-                parse_onehot[0] += parse_map[label] * i
-
         # load image-parse-agnostic
+        parse_name = im_name.replace('image', 'image-parse-v3').replace('.jpg', '.png')
         image_parse_agnostic = Image.open(
             osp.join(self.data_path, parse_name.replace('image-parse-v3', 'image-parse-agnostic-v3.2')))
         image_parse_agnostic = transforms.Resize(self.fine_width, interpolation=0)(image_parse_agnostic)
@@ -195,60 +171,18 @@ class CPDataset(data.Dataset):
             for label in labels[i][1]:
                 new_parse_agnostic_map[i] += parse_agnostic_map[label]
 
-        # parse cloth & parse cloth mask
-        pcm = new_parse_map[3:4]
-        im_c = im * pcm + (1 - pcm)
-
-        # load pose points
-        pose_name = im_name.replace('image', 'openpose_img').replace('.jpg', '_rendered.png')
-        pose_map = Image.open(osp.join(self.data_path, pose_name))
-        pose_map = transforms.Resize(self.fine_width, interpolation=2)(pose_map)
-        pose_map = self.transform(pose_map)  # [-1,1]
-
-        # pose name
-        pose_name = im_name.replace('image', 'openpose_json').replace('.jpg', '_keypoints.json')
-        with open(osp.join(self.data_path, pose_name), 'r') as f:
-            pose_label = json.load(f)
-            pose_data = pose_label['people'][0]['pose_keypoints_2d']
-            pose_data = np.array(pose_data)
-            pose_data = pose_data.reshape((-1, 3))[:, :2]
-
         # load densepose
         densepose_name = im_name.replace('image', 'image-densepose')
         densepose_map = Image.open(osp.join(self.data_path, densepose_name))
         densepose_map = transforms.Resize(self.fine_width, interpolation=2)(densepose_map)
         densepose_map = self.transform(densepose_map)  # [-1,1]
 
-        # agnostic
-        agnostic = self.get_agnostic(im_pil_big, im_parse_pil_big, pose_data)
-        agnostic = transforms.Resize(self.fine_width, interpolation=2)(agnostic)
-        agnostic = self.transform(agnostic)
-
-        # to_img = transforms.ToPILImage()
-        # to_img((c['paired'] + 1) / 2.0).save('cloth.jpg')
-        # to_img((densepose_map + 1) / 2.0).save('densepose.jpg')
-        # to_img((pose_map + 1) / 2.0).save('pose.jpg')
-        # to_img((agnostic + 1) / 2.0).save('agnostic.jpg')
-        # to_img((im_c + 1) / 2.0).save('warped_cloth.jpg')
+        
         result = {
-            'c_name': c_name,  # for visualization
-            'im_name': im_name,  # for visualization or ground truth
-            # intput 1 (clothfloww)
-            'cloth': c,  # for input
-            'cloth_mask': cm,  # for input
-            # intput 2 (segnet)
+            'cloth': c,
+            'cloth_mask': cm,
             'parse_agnostic': new_parse_agnostic_map,
             'densepose': densepose_map,
-            'pose': pose_map,  # for conditioning
-            # generator input
-            'agnostic': agnostic,
-            # GT
-            'parse_onehot': parse_onehot,  # Cross Entropy
-            'parse': new_parse_map,  # GAN Loss real
-            'pcm': pcm,  # L1 Loss & vis
-            'parse_cloth': im_c,  # VGG Loss & vis
-            # visualization & GT
-            'image': im,  # for visualization
             'image_name': self.im_names[index]
         }
 

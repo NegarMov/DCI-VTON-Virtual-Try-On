@@ -62,18 +62,12 @@ if __name__ == '__main__':
                 c_paired = data['cloth'][key].cuda()
                 cm_paired = data['cloth_mask'][key]
                 cm_paired = torch.FloatTensor((cm_paired.numpy() > 0.5).astype(float)).cuda()
+                
                 # input2
                 parse_agnostic = data['parse_agnostic'].cuda()
                 densepose = data['densepose'].cuda()
-                openpose = data['pose'].cuda()
-                # GT
-                label_onehot = data['parse_onehot'].cuda()  # CE
-                label = data['parse'].cuda()  # GAN loss
-                parse_cloth_mask = data['pcm'].cuda()  # L1
-                im_c = data['parse_cloth'].cuda()  # VGG
+                
                 # visualization
-                im = data['image']
-                agnostic = data['agnostic']
                 image_name = data['image_name']
                 
                 pre_clothes_mask_down = F.interpolate(cm_paired, size=(256, 192), mode='nearest')
@@ -104,12 +98,10 @@ if __name__ == '__main__':
                 
                 to_img = transforms.ToPILImage()
                 for j in range(warped_cloth.shape[0]):
-                    a = agnostic.cuda()
-                    b = im_c.cuda()
                     c = c_paired.cuda()
                     e = warped_cloth
                     f = warped_mask
-                    # combine = torch.cat([a[j], b[j], c[j], e[j]], 2).squeeze()
+
                     combine = e[j].squeeze()
                     cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy() + 1) / 2
                     rgb = (cv_img * 255).astype(np.uint8)
@@ -119,5 +111,3 @@ if __name__ == '__main__':
                     mask_img = f[j].squeeze().cpu().numpy()
                     mask_img = (mask_img * 255).astype(np.uint8)
                     cv2.imwrite(mask_path + '/' + image_name[j], mask_img)
-                    # img = to_img((warped_cloth[j].data + 1) / 2.0)
-                    # img.save(os.path.join(path, image_name[j] + '.png'))
